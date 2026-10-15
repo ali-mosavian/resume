@@ -1,0 +1,52 @@
+name: Publish CV
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  dashes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use "-", never em or en dashes
+        run: |
+          # UTF-8 bytes of the en and em dash, escaped so this file passes its own check. grep's exit
+          # status: 0 found, 1 none, anything else an error, which must fail too rather than pass silently.
+          set +e
+          git grep -n -I -P '\xE2\x80[\x93\x94]'
+          case $? in
+            0) echo "::error::Em/en dashes found above; use '-'"; exit 1 ;;
+            1) ;;
+            *) exit 2 ;;
+          esac
+
+  deploy:
+    needs: dashes
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: astral-sh/setup-uv@v6
+      - run: >-
+          uv run --project builder --no-dev resume build --cv resume.yaml --theme split
+          --template builder/templates/split.docx --out _site && ls -l _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
